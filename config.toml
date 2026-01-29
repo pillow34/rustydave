@@ -1,4 +1,4 @@
-max_level = 1000
+max_level = 5000
 
 [physics]
 target_vx = 30.0

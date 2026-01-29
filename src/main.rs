@@ -1,8 +1,6 @@
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
 use std::collections::HashSet;
-use std::fs;
-use serde::{Deserialize, Serialize};
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind, KeyboardEnhancementFlags, PushKeyboardEnhancementFlags, PopKeyboardEnhancementFlags},
     execute, queue,
@@ -11,97 +9,8 @@ use crossterm::{
     style::{Color, Print, SetForegroundColor, ResetColor},
 };
 
-use rustydave::{Tile, LEVEL_WIDTH, LEVEL_HEIGHT, generate_level};
+use rustydave::{Tile, LEVEL_WIDTH, LEVEL_HEIGHT, generate_level, Config};
 
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct PhysicsConfig {
-    target_vx: f32,
-    accel_ground: f32,
-    accel_air: f32,
-    jump_vy: f32,
-    gravity: f32,
-    coyote_time: f32,
-    jump_buffer_time: f32,
-    jump_release_gravity_mult: f32,
-    friction: f32,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct KeysConfig {
-    left: Vec<String>,
-    right: Vec<String>,
-    jump: Vec<String>,
-    quit: Vec<String>,
-    restart: Vec<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct Config {
-    #[serde(default = "default_max_level")]
-    max_level: u32,
-    physics: PhysicsConfig,
-    keys: KeysConfig,
-}
-
-fn default_max_level() -> u32 { 10 }
-
-impl Default for Config {
-    fn default() -> Self {
-        Config {
-            max_level: 10,
-            physics: PhysicsConfig {
-                target_vx: 30.0,
-                accel_ground: 200.0,
-                accel_air: 80.0,
-                jump_vy: -28.0,
-                gravity: 80.0,
-                coyote_time: 0.1,
-                jump_buffer_time: 0.1,
-                jump_release_gravity_mult: 3.0,
-                friction: 400.0,
-            },
-            keys: KeysConfig {
-                left: vec!["Left".to_string(), "a".to_string(), "A".to_string()],
-                right: vec!["Right".to_string(), "d".to_string(), "D".to_string()],
-                jump: vec!["Up".to_string(), "w".to_string(), "W".to_string(), "Space".to_string()],
-                quit: vec!["Esc".to_string(), "q".to_string(), "Q".to_string()],
-                restart: vec!["Enter".to_string()],
-            },
-        }
-    }
-}
-
-impl Config {
-    fn load() -> Self {
-        fs::read_to_string("config.toml")
-            .and_then(|content| toml::from_str(&content).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e)))
-            .unwrap_or_else(|_| Config::default())
-    }
-
-    fn key_matches(&self, code: KeyCode, key_list: &[String]) -> bool {
-        for k in key_list {
-            let matches = match k.as_str() {
-                "Left" => code == KeyCode::Left,
-                "Right" => code == KeyCode::Right,
-                "Up" => code == KeyCode::Up,
-                "Down" => code == KeyCode::Down,
-                "Enter" => code == KeyCode::Enter,
-                "Esc" => code == KeyCode::Esc,
-                "Space" => code == KeyCode::Char(' '),
-                s if s.len() == 1 => {
-                    let c = s.chars().next().unwrap();
-                    code == KeyCode::Char(c) || 
-                    code == KeyCode::Char(c.to_lowercase().next().unwrap()) || 
-                    code == KeyCode::Char(c.to_uppercase().next().unwrap())
-                },
-                _ => false,
-            };
-            if matches { return true; }
-        }
-        false
-    }
-}
 
 /// Represents the player character, Dave.
 struct Player {

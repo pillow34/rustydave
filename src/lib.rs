@@ -1,10 +1,104 @@
 //! Shared library for Rusty Dave game logic.
 //! Contains level generation, tile definitions, and random number generation.
 
+use std::fs;
+use std::io;
+use serde::{Deserialize, Serialize};
+use crossterm::event::KeyCode;
+
 /// Width of the game level in tiles.
 pub const LEVEL_WIDTH: usize = 60;
 /// Height of the game level in tiles.
 pub const LEVEL_HEIGHT: usize = 20;
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PhysicsConfig {
+    pub target_vx: f32,
+    pub accel_ground: f32,
+    pub accel_air: f32,
+    pub jump_vy: f32,
+    pub gravity: f32,
+    pub coyote_time: f32,
+    pub jump_buffer_time: f32,
+    pub jump_release_gravity_mult: f32,
+    pub friction: f32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct KeysConfig {
+    pub left: Vec<String>,
+    pub right: Vec<String>,
+    pub jump: Vec<String>,
+    pub quit: Vec<String>,
+    pub restart: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Config {
+    #[serde(default = "default_max_level")]
+    pub max_level: u32,
+    pub physics: PhysicsConfig,
+    pub keys: KeysConfig,
+}
+
+fn default_max_level() -> u32 { 10 }
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            max_level: 10,
+            physics: PhysicsConfig {
+                target_vx: 30.0,
+                accel_ground: 200.0,
+                accel_air: 80.0,
+                jump_vy: -28.0,
+                gravity: 80.0,
+                coyote_time: 0.1,
+                jump_buffer_time: 0.1,
+                jump_release_gravity_mult: 3.0,
+                friction: 400.0,
+            },
+            keys: KeysConfig {
+                left: vec!["Left".to_string(), "a".to_string(), "A".to_string()],
+                right: vec!["Right".to_string(), "d".to_string(), "D".to_string()],
+                jump: vec!["Up".to_string(), "w".to_string(), "W".to_string(), "Space".to_string()],
+                quit: vec!["Esc".to_string(), "q".to_string(), "Q".to_string()],
+                restart: vec!["Enter".to_string()],
+            },
+        }
+    }
+}
+
+impl Config {
+    pub fn load() -> Self {
+        fs::read_to_string("config.toml")
+            .and_then(|content| toml::from_str(&content).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e)))
+            .unwrap_or_else(|_| Config::default())
+    }
+
+    pub fn key_matches(&self, code: KeyCode, key_list: &[String]) -> bool {
+        for k in key_list {
+            let matches = match k.as_str() {
+                "Left" => code == KeyCode::Left,
+                "Right" => code == KeyCode::Right,
+                "Up" => code == KeyCode::Up,
+                "Down" => code == KeyCode::Down,
+                "Enter" => code == KeyCode::Enter,
+                "Esc" => code == KeyCode::Esc,
+                "Space" => code == KeyCode::Char(' '),
+                s if s.len() == 1 => {
+                    let c = s.chars().next().unwrap();
+                    code == KeyCode::Char(c) || 
+                    code == KeyCode::Char(c.to_lowercase().next().unwrap()) || 
+                    code == KeyCode::Char(c.to_uppercase().next().unwrap())
+                },
+                _ => false,
+            };
+            if matches { return true; }
+        }
+        false
+    }
+}
 
 /// Represents the different types of tiles in the game.
 #[derive(Clone, Copy, PartialEq, Debug)]
