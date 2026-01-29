@@ -46,19 +46,19 @@ struct Game {
     is_dead: bool,
     /// Whether the player has completed the current level.
     level_complete: bool,
-    /// The current level number (1 to MAX_LEVEL).
+    /// The current level number.
     current_level: u32,
     /// Status message displayed at the bottom of the screen.
     message: String,
-    /// Timer for death animation/delay.
+    /// Timer for death animation/delay (seconds).
     death_timer: f32,
-    /// Timer for level start delay.
+    /// Timer for level start delay (seconds).
     start_timer: f32,
-    /// Current configuration.
+    /// Current configuration loaded from config.toml or defaults.
     config: Config,
-    /// Current number of lives.
+    /// Current number of lives remaining.
     lives: i32,
-    /// Current score.
+    /// Current player score.
     score: i32,
 }
 
@@ -94,6 +94,7 @@ impl Game {
     }
 
     /// Initializes or re-initializes the level based on `current_level`.
+    /// Generates a new procedural layout and positions the player.
     fn init_level(&mut self) {
         let (level, (px, py)) = generate_level(self.current_level);
         self.level = level;
@@ -101,7 +102,7 @@ impl Game {
         self.player.y = py;
     }
 
-    /// Resets the player state and reloads the current level.
+    /// Resets the game state for the current level or restarts the game if all lives are lost.
     fn reset(&mut self) {
         if self.lives <= 0 {
             self.lives = 3;
@@ -123,7 +124,8 @@ impl Game {
         self.message = format!("Level {}: Find the Trophy (*) and then reach the Exit (E)!", self.current_level);
     }
 
-    /// Updates the game state based on elapsed time and keyboard input.
+    /// Updates the game state based on elapsed time (`dt`) and keyboard input.
+    /// Handles physics, movement, collisions, and interactions.
     fn update(&mut self, dt: f32, keys: &HashSet<KeyCode>) {
         let restart_pressed = keys.iter().any(|&k| self.config.key_matches(k, &self.config.keys.restart));
 

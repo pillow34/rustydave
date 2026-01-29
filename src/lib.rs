@@ -13,31 +13,48 @@ pub const LEVEL_HEIGHT: usize = 20;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PhysicsConfig {
+    /// Target horizontal velocity in units/second.
     pub target_vx: f32,
+    /// Acceleration on solid ground.
     pub accel_ground: f32,
+    /// Acceleration while in the air.
     pub accel_air: f32,
+    /// Initial upward velocity for a jump (negative value).
     pub jump_vy: f32,
+    /// Downward gravity acceleration.
     pub gravity: f32,
+    /// Time window (in seconds) after leaving a platform where Dave can still jump.
     pub coyote_time: f32,
+    /// Time window (in seconds) to buffer a jump input before landing.
     pub jump_buffer_time: f32,
+    /// Gravity multiplier applied when the jump button is released early.
     pub jump_release_gravity_mult: f32,
+    /// Friction applied when no horizontal input is given.
     pub friction: f32,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct KeysConfig {
+    /// Keys mapped to moving left.
     pub left: Vec<String>,
+    /// Keys mapped to moving right.
     pub right: Vec<String>,
+    /// Keys mapped to jumping.
     pub jump: Vec<String>,
+    /// Keys mapped to quitting the game.
     pub quit: Vec<String>,
+    /// Keys mapped to restarting or continuing to the next level.
     pub restart: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Config {
+    /// Maximum level Dave can reach.
     #[serde(default = "default_max_level")]
     pub max_level: u32,
+    /// Physics-related constants.
     pub physics: PhysicsConfig,
+    /// Keyboard mapping configuration.
     pub keys: KeysConfig,
 }
 
@@ -70,12 +87,14 @@ impl Default for Config {
 }
 
 impl Config {
+    /// Loads the configuration from `config.toml`, or returns defaults if loading fails.
     pub fn load() -> Self {
         fs::read_to_string("config.toml")
             .and_then(|content| toml::from_str(&content).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e)))
             .unwrap_or_else(|_| Config::default())
     }
 
+    /// Checks if a given `KeyCode` matches any of the keys in the provided `key_list`.
     pub fn key_matches(&self, code: KeyCode, key_list: &[String]) -> bool {
         for k in key_list {
             let matches = match k.as_str() {
@@ -113,7 +132,7 @@ pub enum Tile {
     Exit,
     /// Deadly hazards (like fire or spikes) that kill Dave on contact.
     Hazard,
-    /// Collectible diamonds for points.
+    /// Collectible diamonds that grant 100 points each.
     Diamond,
 }
 

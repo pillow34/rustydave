@@ -26,7 +26,34 @@ Be careful! If you touch a **Hazard** (**`^`**), you'll lose a life. You start w
 - **Terminal Graphics:** Uses `crossterm` for cross-platform terminal manipulation and colors.
 - **Progressive Difficulty:** 10 distinct levels to challenge your skills.
 - **Lives & Score System:** Collect diamonds for points and manage your limited lives.
-- **External Configuration:** Customize physics and keybindings via `config.toml`.
+- **External Configuration:** Customize physics and keybindings via `config.toml`. You can change gravity, speed, jump height, and rebind keys without recompiling.
+- **Reachability Validation:** Includes a sophisticated level validator that uses pathfinding to ensure every generated level is solvable.
+
+## Configuration (config.toml)
+
+You can customize the game by editing `config.toml`. If the file is missing, the game will use default values.
+
+```toml
+max_level = 10
+
+[physics]
+target_vx = 30.0
+accel_ground = 200.0
+accel_air = 80.0
+jump_vy = -28.0
+gravity = 80.0
+coyote_time = 0.1
+jump_buffer_time = 0.1
+jump_release_gravity_mult = 3.0
+friction = 400.0
+
+[keys]
+left = ["Left", "a", "A"]
+right = ["Right", "d", "D"]
+jump = ["Up", "w", "W", "Space"]
+quit = ["Esc", "q", "Q"]
+restart = ["Enter"]
+```
 
 ## Level Design Example
 
@@ -82,6 +109,16 @@ You can also start at a specific level (up to the `max_level` defined in `config
 ```bash
 cargo run -- 3
 ```
+
+### Level Validation
+
+To verify the solvability of all levels defined by `max_level` in your configuration, run:
+
+```bash
+cargo run --bin validate_levels
+```
+
+This tool uses Breadth-First Search (BFS) to simulate player movement and ensure the Trophy and Exit are reachable in every level.
 
 ## Technical Details
 
