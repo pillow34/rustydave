@@ -25,6 +25,40 @@ Be careful! If you touch a **Hazard** (**`^`**), you'll perish (**`X`**) and hav
 - **Terminal Graphics:** Uses `crossterm` for cross-platform terminal manipulation and colors.
 - **Progressive Difficulty:** 5 distinct levels to challenge your skills.
 
+## Level Design Example
+
+Here is an example of a procedurally generated level (Level 1):
+
+```text
+############################################################
+#                                                          #
+#                                                          #
+#                                 ^^    ^   ^    ^ *       #
+#                         ##################################
+#                                                          #
+#                                                          #
+#       ^^       ^^                                        #
+#####################################                      #
+#                                                          #
+#                                                          #
+#                                       ^   ^^       ^     #
+#                                 ##########################
+#                                                          #
+#                                                          #
+#                ^^    ^           E                       #
+#              ######################                      #
+# D                                                        #
+##########                                                 #
+###################^############^###########################
+```
+
+In this layout:
+- `D`: Dave (Player)
+- `#`: Wall / Platform
+- `*`: Trophy
+- `E`: Exit
+- `^`: Hazard
+
 ## Getting Started
 
 ### Prerequisites
