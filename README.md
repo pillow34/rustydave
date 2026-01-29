@@ -4,12 +4,30 @@ Rusty Dave is a terminal-based platformer game written in Rust, inspired by clas
 
 ## Gameplay
 
-In Rusty Dave, you control Dave (**D**) through a series of levels. Your objective in each level is:
-1. Find and collect the **Trophy** (**`*`**).
-2. Reach the **Exit** (**`E`**) once you have the trophy.
-3. Collect **Diamonds** (**`+`**) along the way for extra points!
+In Rusty Dave, you control Dave through a series of levels. Your objective in each level is:
+1. Find and collect the **Trophy**.
+2. Reach the **Exit** once you have the trophy.
+3. Collect **Diamonds** along the way for extra points!
 
-Be careful! If you touch a **Hazard** (**`^`**), you'll lose a life. You start with 3 lives. If you lose all lives, it's Game Over!
+Be careful! If you touch a **Hazard**, you'll lose a life. You start with 3 lives. If you lose all lives, it's Game Over!
+
+### Graphics Modes
+
+The game supports two graphics modes:
+
+1.  **Older Graphics (Default):** Uses single-character tiles for a classic retro feel.
+2.  **ASCII Graphics:** Uses 2-character wide tiles for a more detailed "graphical" look (enable with `--ascii`).
+
+#### Legend
+
+| Element | Older Graphics | ASCII Graphics |
+| :--- | :---: | :---: |
+| Dave | `D` | `☺ ` |
+| Wall | `#` | `██` |
+| Trophy | `*` | `★ ` |
+| Exit | `E` | `][` |
+| Hazard | `^` | `▲▲` |
+| Diamond | `+` | `♦ ` |
 
 ## Controls
 
@@ -57,38 +75,30 @@ restart = ["Enter"]
 
 ## Level Design Example
 
-Here is an example of a procedurally generated level (Level 1):
+Here is an example of a procedurally generated level (Level 1) using ASCII Graphics (`--ascii`):
 
 ```text
-############################################################
-#                                                          #
-#                                                          #
-#                                 ^^    ^   ^    ^ *       #
-#                         ##################################
-#                                                          #
-#                                                          #
-#       ^^       ^^                                        #
-#####################################                      #
-#                                                          #
-#                                                          #
-#                                       ^   ^^       ^     #
-#                                 ##########################
-#                                                          #
-#                                                          #
-#                ^^    ^           E                       #
-#              ######################                      #
-# D                                                        #
-##########                                                 #
-###################^############^###########################
+████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
+██                                                                                                                    ██
+██                                                                                                                    ██
+██                                                                  ▲▲▲▲        ▲▲      ▲▲        ▲▲  ★               ██
+██                                                  ████████████████████████████████████████████████████████████████████
+██                                                                                                                    ██
+██                                                                                                                    ██
+██              ▲▲▲▲              ▲▲▲▲                                                                                ██
+████████████████████████████████████████████████████████████                ██                                        ██
+██                                                                                                                    ██
+██                                                                                                                    ██
+██                                                                              ▲▲      ▲▲▲▲              ▲▲          ██
+██                                                  ████████████████████████████████████████████████████████████████████
+██                                                                                                                    ██
+██                                                                                                                    ██
+██                                ▲▲▲▲        ▲▲                    ][                                                ██
+██                            ████████████████████████████████████████████                                            ██
+██  ☺                                                                                                                 ██
+████████████████████                                                                                                  ██
+██████████████████████████████████████▲▲████████████████████████████████████▲▲██████████████████████████████████████████
 ```
-
-In this layout:
-- `D`: Dave (Player)
-- `#`: Wall / Platform
-- `*`: Trophy
-- `E`: Exit
-- `^`: Hazard
-- `+`: Diamond
 
 ## Getting Started
 
@@ -101,13 +111,21 @@ In this layout:
 Clone the repository and run using Cargo:
 
 ```bash
+# Runs with Older Graphics (Default)
 cargo run
+
+# Runs with ASCII Graphics
+cargo run -- --ascii
 ```
 
-You can also start at a specific level (up to the `max_level` defined in `config.toml`) by passing it as an argument:
+You can also start at a specific level (up to the `max_level` defined in `config.toml`) and optionally specify the graphics mode:
 
 ```bash
+# Start at Level 3 with Older Graphics
 cargo run -- 3
+
+# Start at Level 3 with ASCII Graphics
+cargo run -- 3 --ascii
 ```
 
 ### Level Validation

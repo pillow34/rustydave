@@ -60,11 +60,13 @@ struct Game {
     lives: i32,
     /// Current player score.
     score: i32,
+    /// Whether to use ASCII graphics (2-char wide) or older graphics (1-char wide).
+    use_ascii: bool,
 }
 
 impl Game {
     /// Creates a new game instance, starting at the specified level.
-    fn new(start_level: u32, config: Config) -> Self {
+    fn new(start_level: u32, config: Config, use_ascii: bool) -> Self {
         let mut game = Game {
             level: [[Tile::Empty; LEVEL_WIDTH]; LEVEL_HEIGHT],
             player: Player {
@@ -88,6 +90,7 @@ impl Game {
             config,
             lives: 3,
             score: 0,
+            use_ascii,
         };
         game.init_level();
         game
@@ -315,19 +318,27 @@ impl Game {
         for y in 0..LEVEL_HEIGHT {
             for x in 0..LEVEL_WIDTH {
                 if x == self.player.x.floor() as usize && y == self.player.y.floor() as usize {
-                    if self.is_dead {
-                        buffer.push_str("\x1b[31mX\x1b[0m"); // Red X for dead Dave
+                    if self.use_ascii {
+                        if self.is_dead {
+                            buffer.push_str("\x1b[31mX \x1b[0m"); // Red X for dead Dave
+                        } else {
+                            buffer.push_str("\x1b[36m☺ \x1b[0m"); // Cyan Dave (Smile)
+                        }
                     } else {
-                        buffer.push_str("\x1b[36mD\x1b[0m"); // Cyan Dave
+                        if self.is_dead {
+                            buffer.push_str("\x1b[31mX\x1b[0m"); // Red X for dead Dave
+                        } else {
+                            buffer.push_str("\x1b[36mD\x1b[0m"); // Cyan Dave (Letter D)
+                        }
                     }
                 } else {
                     match self.level[y][x] {
-                        Tile::Empty => buffer.push(' '),
-                        Tile::Wall => buffer.push_str("\x1b[34m#\x1b[0m"), // Blue Wall
-                        Tile::Trophy => buffer.push_str("\x1b[33m*\x1b[0m"), // Yellow Trophy
-                        Tile::Exit => buffer.push_str("\x1b[32mE\x1b[0m"), // Green Exit
-                        Tile::Hazard => buffer.push_str("\x1b[31m^\x1b[0m"), // Red Hazard
-                        Tile::Diamond => buffer.push_str("\x1b[35m+\x1b[0m"), // Magenta Diamond
+                        Tile::Empty => buffer.push_str(if self.use_ascii { "  " } else { " " }),
+                        Tile::Wall => buffer.push_str(if self.use_ascii { "\x1b[34m██\x1b[0m" } else { "\x1b[34m#\x1b[0m" }),
+                        Tile::Trophy => buffer.push_str(if self.use_ascii { "\x1b[33m★ \x1b[0m" } else { "\x1b[33m*\x1b[0m" }),
+                        Tile::Exit => buffer.push_str(if self.use_ascii { "\x1b[32m][\x1b[0m" } else { "\x1b[32mE\x1b[0m" }),
+                        Tile::Hazard => buffer.push_str(if self.use_ascii { "\x1b[31m▲▲\x1b[0m" } else { "\x1b[31m^\x1b[0m" }),
+                        Tile::Diamond => buffer.push_str(if self.use_ascii { "\x1b[35m♦ \x1b[0m" } else { "\x1b[35m+\x1b[0m" }),
                     }
                 }
             }
@@ -365,12 +376,17 @@ impl Game {
     }
 }
 
-fn parse_start_level(args: &[String], max_level: u32) -> u32 {
-    if args.len() > 1 {
-        args[1].parse::<u32>().unwrap_or(1).clamp(1, max_level)
-    } else {
-        1
+fn parse_args(args: &[String], max_level: u32) -> (u32, bool) {
+    let mut start_level = 1;
+    let mut use_ascii = false;
+    for arg in args.iter().skip(1) {
+        if arg == "--ascii" {
+            use_ascii = true;
+        } else if let Ok(level) = arg.parse::<u32>() {
+            start_level = level.clamp(1, max_level);
+        }
     }
+    (start_level, use_ascii)
 }
 
 /// Entry point for the Rusty Dave game.
@@ -391,9 +407,9 @@ fn main() -> io::Result<()> {
 
     let config = Config::load();
     let args: Vec<String> = std::env::args().collect();
-    let start_level = parse_start_level(&args, config.max_level);
+    let (start_level, use_ascii) = parse_args(&args, config.max_level);
 
-    let mut game = Game::new(start_level, config);
+    let mut game = Game::new(start_level, config, use_ascii);
     let mut last_tick = Instant::now();
     let mut keys = HashSet::new();
 
@@ -447,26 +463,28 @@ mod tests {
 
     #[test]
     fn test_game_init_level() {
-        let game = Game::new(3, Config::default());
+        let game = Game::new(3, Config::default(), false);
         assert_eq!(game.current_level, 3);
         assert!(game.message.contains("Level 3"));
     }
 
     #[test]
     fn test_game_init_level_clamping() {
-        // We don't clamp in Game::new, we clamp in main (via parse_start_level).
+        // We don't clamp in Game::new, we clamp in main (via parse_args).
         // But let's check Game::new handles whatever it's given.
-        let game = Game::new(10, Config::default());
+        let game = Game::new(10, Config::default(), false);
         assert_eq!(game.current_level, 10);
     }
 
     #[test]
-    fn test_parse_start_level() {
+    fn test_parse_args() {
         let max = 10;
-        assert_eq!(parse_start_level(&vec!["exe".to_string()], max), 1);
-        assert_eq!(parse_start_level(&vec!["exe".to_string(), "3".to_string()], max), 3);
-        assert_eq!(parse_start_level(&vec!["exe".to_string(), "0".to_string()], max), 1);
-        assert_eq!(parse_start_level(&vec!["exe".to_string(), "20".to_string()], max), max);
+        assert_eq!(parse_args(&vec!["exe".to_string()], max), (1, false));
+        assert_eq!(parse_args(&vec!["exe".to_string(), "3".to_string()], max), (3, false));
+        assert_eq!(parse_args(&vec!["exe".to_string(), "0".to_string()], max), (1, false));
+        assert_eq!(parse_args(&vec!["exe".to_string(), "20".to_string()], max), (max, false));
+        assert_eq!(parse_args(&vec!["exe".to_string(), "--ascii".to_string()], max), (1, true));
+        assert_eq!(parse_args(&vec!["exe".to_string(), "5".to_string(), "--ascii".to_string()], max), (5, true));
     }
 
     #[test]
@@ -487,7 +505,7 @@ mod tests {
 
     #[test]
     fn test_diamond_collection() {
-        let mut game = Game::new(1, Config::default());
+        let mut game = Game::new(1, Config::default(), false);
         game.start_timer = 0.0;
         game.score = 0;
         game.level[10][10] = Tile::Diamond;
@@ -504,7 +522,7 @@ mod tests {
 
     #[test]
     fn test_lives_decrement() {
-        let mut game = Game::new(1, Config::default());
+        let mut game = Game::new(1, Config::default(), false);
         game.start_timer = 0.0;
         game.lives = 3;
         game.level[10][10] = Tile::Hazard;
