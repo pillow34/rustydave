@@ -7,8 +7,9 @@ Rusty Dave is a terminal-based platformer game written in Rust, inspired by clas
 In Rusty Dave, you control Dave (**D**) through a series of levels. Your objective in each level is:
 1. Find and collect the **Trophy** (**`*`**).
 2. Reach the **Exit** (**`E`**) once you have the trophy.
+3. Collect **Diamonds** (**`+`**) along the way for extra points!
 
-Be careful! If you touch a **Hazard** (**`^`**), you'll perish (**`X`**) and have to restart the level.
+Be careful! If you touch a **Hazard** (**`^`**), you'll lose a life. You start with 3 lives. If you lose all lives, it's Game Over!
 
 ## Controls
 
@@ -20,10 +21,12 @@ Be careful! If you touch a **Hazard** (**`^`**), you'll perish (**`X`**) and hav
 
 ## Features
 
-- **Procedural Levels:** Levels are generated on-the-fly, ensuring a unique experience while remaining solvable.
+- **Procedural Levels:** Levels are generated on-the-fly, ensuring a unique experience while remaining solvable. Now supports multiple archetypes (Zig-zag and Islands).
 - **Physics-based Movement:** Dave's movement includes acceleration, friction, and gravity for a smooth platforming feel.
 - **Terminal Graphics:** Uses `crossterm` for cross-platform terminal manipulation and colors.
-- **Progressive Difficulty:** 5 distinct levels to challenge your skills.
+- **Progressive Difficulty:** 10 distinct levels to challenge your skills.
+- **Lives & Score System:** Collect diamonds for points and manage your limited lives.
+- **External Configuration:** Customize physics and keybindings via `config.toml`.
 
 ## Level Design Example
 
@@ -58,6 +61,7 @@ In this layout:
 - `*`: Trophy
 - `E`: Exit
 - `^`: Hazard
+- `+`: Diamond
 
 ## Getting Started
 
@@ -73,7 +77,7 @@ Clone the repository and run using Cargo:
 cargo run
 ```
 
-You can also start at a specific level (1-5) by passing it as an argument:
+You can also start at a specific level (up to the `max_level` defined in `config.toml`) by passing it as an argument:
 
 ```bash
 cargo run -- 3

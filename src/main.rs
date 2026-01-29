@@ -1,6 +1,8 @@
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
 use std::collections::HashSet;
+use std::fs;
+use serde::{Deserialize, Serialize};
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind, KeyboardEnhancementFlags, PushKeyboardEnhancementFlags, PopKeyboardEnhancementFlags},
     execute, queue,
@@ -11,15 +13,95 @@ use crossterm::{
 
 use rustydave::{Tile, LEVEL_WIDTH, LEVEL_HEIGHT, generate_level};
 
-const TARGET_VX: f32 = 30.0;
-const ACCEL_GROUND: f32 = 200.0;
-const ACCEL_AIR: f32 = 80.0;
-const JUMP_VY: f32 = -28.0;
-const GRAVITY: f32 = 80.0;
-const COYOTE_TIME: f32 = 0.1;
-const JUMP_BUFFER_TIME: f32 = 0.1;
-const JUMP_RELEASE_GRAVITY_MULT: f32 = 3.0;
-const FRICTION: f32 = 400.0;
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct PhysicsConfig {
+    target_vx: f32,
+    accel_ground: f32,
+    accel_air: f32,
+    jump_vy: f32,
+    gravity: f32,
+    coyote_time: f32,
+    jump_buffer_time: f32,
+    jump_release_gravity_mult: f32,
+    friction: f32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct KeysConfig {
+    left: Vec<String>,
+    right: Vec<String>,
+    jump: Vec<String>,
+    quit: Vec<String>,
+    restart: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct Config {
+    #[serde(default = "default_max_level")]
+    max_level: u32,
+    physics: PhysicsConfig,
+    keys: KeysConfig,
+}
+
+fn default_max_level() -> u32 { 10 }
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            max_level: 10,
+            physics: PhysicsConfig {
+                target_vx: 30.0,
+                accel_ground: 200.0,
+                accel_air: 80.0,
+                jump_vy: -28.0,
+                gravity: 80.0,
+                coyote_time: 0.1,
+                jump_buffer_time: 0.1,
+                jump_release_gravity_mult: 3.0,
+                friction: 400.0,
+            },
+            keys: KeysConfig {
+                left: vec!["Left".to_string(), "a".to_string(), "A".to_string()],
+                right: vec!["Right".to_string(), "d".to_string(), "D".to_string()],
+                jump: vec!["Up".to_string(), "w".to_string(), "W".to_string(), "Space".to_string()],
+                quit: vec!["Esc".to_string(), "q".to_string(), "Q".to_string()],
+                restart: vec!["Enter".to_string()],
+            },
+        }
+    }
+}
+
+impl Config {
+    fn load() -> Self {
+        fs::read_to_string("config.toml")
+            .and_then(|content| toml::from_str(&content).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e)))
+            .unwrap_or_else(|_| Config::default())
+    }
+
+    fn key_matches(&self, code: KeyCode, key_list: &[String]) -> bool {
+        for k in key_list {
+            let matches = match k.as_str() {
+                "Left" => code == KeyCode::Left,
+                "Right" => code == KeyCode::Right,
+                "Up" => code == KeyCode::Up,
+                "Down" => code == KeyCode::Down,
+                "Enter" => code == KeyCode::Enter,
+                "Esc" => code == KeyCode::Esc,
+                "Space" => code == KeyCode::Char(' '),
+                s if s.len() == 1 => {
+                    let c = s.chars().next().unwrap();
+                    code == KeyCode::Char(c) || 
+                    code == KeyCode::Char(c.to_lowercase().next().unwrap()) || 
+                    code == KeyCode::Char(c.to_uppercase().next().unwrap())
+                },
+                _ => false,
+            };
+            if matches { return true; }
+        }
+        false
+    }
+}
 
 /// Represents the player character, Dave.
 struct Player {
@@ -55,7 +137,7 @@ struct Game {
     is_dead: bool,
     /// Whether the player has completed the current level.
     level_complete: bool,
-    /// The current level number (1-5).
+    /// The current level number (1 to MAX_LEVEL).
     current_level: u32,
     /// Status message displayed at the bottom of the screen.
     message: String,
@@ -63,11 +145,17 @@ struct Game {
     death_timer: f32,
     /// Timer for level start delay.
     start_timer: f32,
+    /// Current configuration.
+    config: Config,
+    /// Current number of lives.
+    lives: i32,
+    /// Current score.
+    score: i32,
 }
 
 impl Game {
     /// Creates a new game instance, starting at the specified level.
-    fn new(start_level: u32) -> Self {
+    fn new(start_level: u32, config: Config) -> Self {
         let mut game = Game {
             level: [[Tile::Empty; LEVEL_WIDTH]; LEVEL_HEIGHT],
             player: Player {
@@ -88,6 +176,9 @@ impl Game {
             message: format!("Level {}: Find the Trophy (*) and then reach the Exit (E)!", start_level),
             death_timer: 0.0,
             start_timer: 0.5,
+            config,
+            lives: 3,
+            score: 0,
         };
         game.init_level();
         game
@@ -103,6 +194,11 @@ impl Game {
 
     /// Resets the player state and reloads the current level.
     fn reset(&mut self) {
+        if self.lives <= 0 {
+            self.lives = 3;
+            self.score = 0;
+            self.current_level = 1;
+        }
         self.player.vx = 0.0;
         self.player.vy = 0.0;
         self.player.on_ground = false;
@@ -120,17 +216,19 @@ impl Game {
 
     /// Updates the game state based on elapsed time and keyboard input.
     fn update(&mut self, dt: f32, keys: &HashSet<KeyCode>) {
+        let restart_pressed = keys.iter().any(|&k| self.config.key_matches(k, &self.config.keys.restart));
+
         if self.is_dead {
             self.death_timer -= dt;
-            if self.death_timer <= 0.0 && keys.contains(&KeyCode::Enter) {
+            if self.death_timer <= 0.0 && restart_pressed {
                 self.reset();
             }
             return;
         }
 
         if self.level_complete {
-            if keys.contains(&KeyCode::Enter) {
-                if self.current_level < 5 {
+            if restart_pressed {
+                if self.current_level < self.config.max_level {
                     self.current_level += 1;
                     self.reset();
                 } else {
@@ -150,28 +248,33 @@ impl Game {
         self.player.coyote_timer -= dt;
         self.player.jump_buffer_timer -= dt;
 
+        // Key states from config
+        let left_pressed = keys.iter().any(|&k| self.config.key_matches(k, &self.config.keys.left));
+        let right_pressed = keys.iter().any(|&k| self.config.key_matches(k, &self.config.keys.right));
+        let jump_pressed = keys.iter().any(|&k| self.config.key_matches(k, &self.config.keys.jump));
+
         // Horizontal movement
         let mut target_vx = 0.0;
         let mut moving = false;
-        if keys.contains(&KeyCode::Left) || keys.contains(&KeyCode::Char('a')) || keys.contains(&KeyCode::Char('A')) {
-            target_vx -= TARGET_VX;
+        if left_pressed {
+            target_vx -= self.config.physics.target_vx;
             moving = true;
         }
-        if keys.contains(&KeyCode::Right) || keys.contains(&KeyCode::Char('d')) || keys.contains(&KeyCode::Char('D')) {
-            target_vx += TARGET_VX;
+        if right_pressed {
+            target_vx += self.config.physics.target_vx;
             moving = true;
         }
         
         // Acceleration/Friction
         if moving {
-            let accel = if self.player.on_ground { ACCEL_GROUND } else { ACCEL_AIR };
+            let accel = if self.player.on_ground { self.config.physics.accel_ground } else { self.config.physics.accel_air };
             if self.player.vx < target_vx {
                 self.player.vx = (self.player.vx + accel * dt).min(target_vx);
             } else if self.player.vx > target_vx {
                 self.player.vx = (self.player.vx - accel * dt).max(target_vx);
             }
         } else {
-            let friction = if self.player.on_ground { FRICTION } else { FRICTION * 0.5 };
+            let friction = if self.player.on_ground { self.config.physics.friction } else { self.config.physics.friction * 0.5 };
             if self.player.vx > 0.0 {
                 self.player.vx = (self.player.vx - friction * dt).max(0.0);
             } else if self.player.vx < 0.0 {
@@ -180,14 +283,13 @@ impl Game {
         }
 
         // Jump input and buffering
-        let jump_pressed = keys.contains(&KeyCode::Up) || keys.contains(&KeyCode::Char('w')) || keys.contains(&KeyCode::Char('W')) || keys.contains(&KeyCode::Char(' '));
         if jump_pressed {
-            self.player.jump_buffer_timer = JUMP_BUFFER_TIME;
+            self.player.jump_buffer_timer = self.config.physics.jump_buffer_time;
         }
 
         // Jump logic (Coyote time and Buffer)
         if self.player.jump_buffer_timer > 0.0 && self.player.coyote_timer > 0.0 {
-            self.player.vy = JUMP_VY;
+            self.player.vy = self.config.physics.jump_vy;
             self.player.on_ground = false;
             self.player.coyote_timer = 0.0;
             self.player.jump_buffer_timer = 0.0;
@@ -195,9 +297,9 @@ impl Game {
 
         // Gravity with variable jump height
         let gravity = if self.player.vy < 0.0 && !jump_pressed {
-            GRAVITY * JUMP_RELEASE_GRAVITY_MULT
+            self.config.physics.gravity * self.config.physics.jump_release_gravity_mult
         } else {
-            GRAVITY
+            self.config.physics.gravity
         };
         self.player.vy += gravity * dt;
 
@@ -206,7 +308,7 @@ impl Game {
         if self.is_colliding(self.player.x, next_y) {
             if self.player.vy > 0.0 {
                 self.player.on_ground = true;
-                self.player.coyote_timer = COYOTE_TIME;
+                self.player.coyote_timer = self.config.physics.coyote_time;
                 self.player.y = next_y.floor() as f32 - 0.01;
             } else {
                 self.player.y = next_y.floor() as f32 + 1.0;
@@ -217,7 +319,7 @@ impl Game {
             // Robust on-ground check: are we standing on a wall?
             if self.is_colliding(self.player.x, self.player.y + 0.1) {
                 self.player.on_ground = true;
-                self.player.coyote_timer = COYOTE_TIME;
+                self.player.coyote_timer = self.config.physics.coyote_time;
             } else {
                 self.player.on_ground = false;
             }
@@ -245,15 +347,22 @@ impl Game {
                 Tile::Trophy => {
                     self.player.has_trophy = true;
                     self.level[ty][tx] = Tile::Empty;
-                    self.message = "Got the Trophy! Now reach the Exit (E)!".to_string();
+                    self.score += 500;
+                    self.message = "Got the Trophy! +500 points. Now reach the Exit (E)!".to_string();
+                }
+                Tile::Diamond => {
+                    self.score += 100;
+                    self.level[ty][tx] = Tile::Empty;
+                    self.message = "Collected a Diamond! +100 points".to_string();
                 }
                 Tile::Exit => {
                     if self.player.has_trophy {
                         self.level_complete = true;
-                        if self.current_level < 5 {
-                            self.message = "Level Complete! Press ENTER for next level.".to_string();
+                        self.score += 1000;
+                        if self.current_level < self.config.max_level {
+                            self.message = "Level Complete! +1000 points. Press ENTER for next level.".to_string();
                         } else {
-                            self.message = "All Levels Complete! Press ENTER to win!".to_string();
+                            self.message = "All Levels Complete! +1000 points. Press ENTER to win!".to_string();
                         }
                     } else {
                         self.message = "You need the Trophy (*) first!".to_string();
@@ -262,7 +371,12 @@ impl Game {
                 Tile::Hazard => {
                     self.is_dead = true;
                     self.death_timer = 0.5;
-                    self.message = "Ouch! You hit a hazard! Press ENTER to restart.".to_string();
+                    self.lives -= 1;
+                    if self.lives > 0 {
+                        self.message = format!("Ouch! You hit a hazard! Lives left: {}. Press ENTER to restart.", self.lives);
+                    } else {
+                        self.message = "GAME OVER! You ran out of lives. Press ENTER to restart game.".to_string();
+                    }
                 }
                 _ => {}
             }
@@ -302,6 +416,7 @@ impl Game {
                         Tile::Trophy => buffer.push_str("\x1b[33m*\x1b[0m"), // Yellow Trophy
                         Tile::Exit => buffer.push_str("\x1b[32mE\x1b[0m"), // Green Exit
                         Tile::Hazard => buffer.push_str("\x1b[31m^\x1b[0m"), // Red Hazard
+                        Tile::Diamond => buffer.push_str("\x1b[35m+\x1b[0m"), // Magenta Diamond
                     }
                 }
             }
@@ -327,7 +442,9 @@ impl Game {
             ResetColor,
             cursor::MoveTo(0, (LEVEL_HEIGHT + 2) as u16),
             Clear(ClearType::CurrentLine),
-            Print(format!("Trophy: {} | Pos: ({:.1}, {:.1})", 
+            Print(format!("Score: {:06} | Lives: {} | Trophy: {} | Pos: ({:.1}, {:.1})", 
+                self.score,
+                self.lives,
                 if self.player.has_trophy { "YES" } else { "NO" },
                 self.player.x, self.player.y))
         )?;
@@ -337,9 +454,9 @@ impl Game {
     }
 }
 
-fn parse_start_level(args: &[String]) -> u32 {
+fn parse_start_level(args: &[String], max_level: u32) -> u32 {
     if args.len() > 1 {
-        args[1].parse::<u32>().unwrap_or(1).clamp(1, 5)
+        args[1].parse::<u32>().unwrap_or(1).clamp(1, max_level)
     } else {
         1
     }
@@ -361,10 +478,11 @@ fn main() -> io::Result<()> {
     // We ignore the error if it's not supported (e.g. in legacy Windows Console)
     let _ = execute!(stdout, PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::REPORT_EVENT_TYPES));
 
+    let config = Config::load();
     let args: Vec<String> = std::env::args().collect();
-    let start_level = parse_start_level(&args);
+    let start_level = parse_start_level(&args, config.max_level);
 
-    let mut game = Game::new(start_level);
+    let mut game = Game::new(start_level, config);
     let mut last_tick = Instant::now();
     let mut keys = HashSet::new();
 
@@ -384,7 +502,7 @@ fn main() -> io::Result<()> {
                     }
                 }
                 
-                if key_event.code == KeyCode::Esc || key_event.code == KeyCode::Char('q') || key_event.code == KeyCode::Char('Q') {
+                if game.config.key_matches(key_event.code, &game.config.keys.quit) {
                     game.running = false;
                 }
             }
@@ -418,7 +536,7 @@ mod tests {
 
     #[test]
     fn test_game_init_level() {
-        let game = Game::new(3);
+        let game = Game::new(3, Config::default());
         assert_eq!(game.current_level, 3);
         assert!(game.message.contains("Level 3"));
     }
@@ -427,17 +545,66 @@ mod tests {
     fn test_game_init_level_clamping() {
         // We don't clamp in Game::new, we clamp in main (via parse_start_level).
         // But let's check Game::new handles whatever it's given.
-        let game = Game::new(10);
+        let game = Game::new(10, Config::default());
         assert_eq!(game.current_level, 10);
     }
 
     #[test]
     fn test_parse_start_level() {
-        assert_eq!(parse_start_level(&vec!["exe".to_string()]), 1);
-        assert_eq!(parse_start_level(&vec!["exe".to_string(), "3".to_string()]), 3);
-        assert_eq!(parse_start_level(&vec!["exe".to_string(), "0".to_string()]), 1);
-        assert_eq!(parse_start_level(&vec!["exe".to_string(), "10".to_string()]), 5);
-        assert_eq!(parse_start_level(&vec!["exe".to_string(), "abc".to_string()]), 1);
+        let max = 10;
+        assert_eq!(parse_start_level(&vec!["exe".to_string()], max), 1);
+        assert_eq!(parse_start_level(&vec!["exe".to_string(), "3".to_string()], max), 3);
+        assert_eq!(parse_start_level(&vec!["exe".to_string(), "0".to_string()], max), 1);
+        assert_eq!(parse_start_level(&vec!["exe".to_string(), "20".to_string()], max), max);
+    }
+
+    #[test]
+    fn test_config_default() {
+        let config = Config::default();
+        assert_eq!(config.physics.gravity, 80.0);
+        assert!(config.keys.left.contains(&"Left".to_string()));
+    }
+
+    #[test]
+    fn test_key_matches() {
+        let config = Config::default();
+        assert!(config.key_matches(KeyCode::Left, &config.keys.left));
+        assert!(config.key_matches(KeyCode::Char('a'), &config.keys.left));
+        assert!(config.key_matches(KeyCode::Char('A'), &config.keys.left));
+        assert!(!config.key_matches(KeyCode::Right, &config.keys.left));
+    }
+
+    #[test]
+    fn test_diamond_collection() {
+        let mut game = Game::new(1, Config::default());
+        game.start_timer = 0.0;
+        game.score = 0;
+        game.level[10][10] = Tile::Diamond;
+        game.player.x = 10.0;
+        game.player.y = 10.0;
+        
+        // Mock a small update to trigger interaction
+        let keys = HashSet::new();
+        game.update(0.01, &keys);
+        
+        assert_eq!(game.score, 100);
+        assert_eq!(game.level[10][10], Tile::Empty);
+    }
+
+    #[test]
+    fn test_lives_decrement() {
+        let mut game = Game::new(1, Config::default());
+        game.start_timer = 0.0;
+        game.lives = 3;
+        game.level[10][10] = Tile::Hazard;
+        game.player.x = 10.0;
+        game.player.y = 10.0;
+        
+        let keys = HashSet::new();
+        game.update(0.01, &keys);
+        
+        assert_eq!(game.lives, 2);
+        assert!(game.is_dead);
     }
 }
 

@@ -56,6 +56,11 @@ fn main() -> std::io::Result<()> {
                         row.clear();
                         execute!(out, SetForegroundColor(Color::Red), Print("^"), ResetColor)?;
                     }
+                    Tile::Diamond => {
+                        print!("{}", row);
+                        row.clear();
+                        execute!(out, SetForegroundColor(Color::Magenta), Print("+"), ResetColor)?;
+                    }
                 }
             }
         }

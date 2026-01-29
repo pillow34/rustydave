@@ -19,6 +19,8 @@ pub enum Tile {
     Exit,
     /// Deadly hazards (like fire or spikes) that kill Dave on contact.
     Hazard,
+    /// Collectible diamonds for points.
+    Diamond,
 }
 
 /// A simple, deterministic random number generator for level generation.
@@ -80,28 +82,69 @@ pub fn generate_level(level_num: u32) -> ([[Tile; LEVEL_WIDTH]; LEVEL_HEIGHT], (
     // Base platform for player
     for x in 1..10 { level[18][x] = Tile::Wall; }
 
-    // Platforms (Zig-zag for guaranteed solvability)
-    // Heights: 16, 12, 8, 4
-    
-    // H16: Left to Rightish (start after base platform to avoid ceiling at spawn)
-    let w1_start = 15;
-    let w1 = rng.range(35, 55) as usize;
-    for x in w1_start..w1 { level[16][x] = Tile::Wall; }
+    let heights = [16, 12, 8, 4];
+    let mut w1 = 0;
+    let mut w1_start = 15;
+    let mut w2 = 0;
+    let mut w3 = 0;
+    let mut w4 = 0;
 
-    // H12: Right to Leftish
-    let w2 = rng.range(25, 45) as usize;
-    for x in w2..59 { level[12][x] = Tile::Wall; }
+    if level_num % 2 != 0 {
+        // Archetype 1: Zig-zag (Classic)
+        // H16: Left to Rightish
+        w1_start = 15;
+        w1 = rng.range(35, 55) as usize;
+        for x in w1_start..w1 { level[16][x] = Tile::Wall; }
 
-    // H8: Left to Rightish
-    let w3 = rng.range(35, 55) as usize;
-    for x in 1..w3 { level[8][x] = Tile::Wall; }
+        // H12: Right to Leftish
+        w2 = rng.range(25, 45) as usize;
+        for x in w2..59 { level[12][x] = Tile::Wall; }
 
-    // H4: Right to Leftish
-    let w4 = rng.range(25, 45) as usize;
-    for x in w4..59 { level[4][x] = Tile::Wall; }
+        // H8: Left to Rightish
+        w3 = rng.range(35, 55) as usize;
+        for x in 1..w3 { level[8][x] = Tile::Wall; }
+
+        // H4: Right to Leftish
+        w4 = rng.range(25, 45) as usize;
+        for x in w4..59 { level[4][x] = Tile::Wall; }
+    } else {
+        // Archetype 2: Floating Islands
+        for &h in &heights {
+            let num_islands = rng.range(2, 4);
+            for i in 0..num_islands {
+                let start = rng.range(5 + i * 15, 15 + i * 15) as usize;
+                let len = rng.range(5, 12) as usize;
+                for x in start..(start + len).min(59) {
+                    level[h][x] = Tile::Wall;
+                }
+                // Record some values for Trophy/Exit logic below if needed
+                if h == 16 && i == 0 { w1 = start + len; w1_start = start; }
+                if h == 12 && i == 0 { w2 = start; }
+                if h == 8 && i == 0 { w3 = start + len; }
+                if h == 4 && i == 0 { w4 = start; }
+            }
+        }
+        // Ensure some reasonable values for subsequent logic
+        if w1 == 0 { w1 = 40; }
+        if w2 == 0 { w2 = 20; }
+        if w3 == 0 { w3 = 40; }
+        if w4 == 0 { w4 = 20; }
+    }
 
     // Trophy: on the top platform
-    let trophy_x = rng.range(w4 as u32 + 2, 58) as usize;
+    let mut trophy_candidates = Vec::new();
+    for x in 1..LEVEL_WIDTH - 1 {
+        if level[4][x] == Tile::Wall {
+            trophy_candidates.push(x);
+        }
+    }
+    let trophy_x = if !trophy_candidates.is_empty() {
+        let idx = rng.range(0, trophy_candidates.len() as u32) as usize;
+        trophy_candidates[idx]
+    } else {
+        // Fallback for safety
+        rng.range(w4 as u32 + 2, 58) as usize
+    };
     level[3][trophy_x] = Tile::Trophy;
 
     // Exit: far right of H16 or Ground
@@ -109,10 +152,19 @@ pub fn generate_level(level_num: u32) -> ([[Tile; LEVEL_WIDTH]; LEVEL_HEIGHT], (
         level[18][55] = Tile::Exit;
         (55, 18)
     } else {
-        let ex = (w1 - 2).max(w1_start);
+        let ex = (w1 - 2).max(w1_start).min(58);
         level[15][ex] = Tile::Exit;
         (ex, 15)
     };
+
+    // Diamonds placement
+    for _ in 0..8 {
+        let h = heights[rng.range(0, heights.len() as u32) as usize];
+        let dx = rng.range(2, 58) as usize;
+        if level[h][dx] == Tile::Wall && level[h-1][dx] == Tile::Empty {
+            level[h-1][dx] = Tile::Diamond;
+        }
+    }
 
     // Hazards on floor
     let floor_chance = if level_num == 1 { 10 } else { 30 };
